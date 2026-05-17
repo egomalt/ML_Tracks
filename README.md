@@ -242,18 +242,50 @@ HNSW строит многоуровневый граф: на верхних у�
 
 ## Деплой на Replicate
 
-```bash
-# Установить Cog
-pip install cog
+### Шаг 1 — Установить Cog
 
-# Проверить локально (индекс должен быть уже построен)
-cog predict -i query="sad breakup song"
-
-# Задеплоить модель
-cog push r8.im/<your-username>/song-finder
+```powershell
+# Через winget (PowerShell от имени администратора)
+winget install --id Replicate.Cog
+# или через pip (без прав администратора)
+.venv\Scripts\pip install cog
 ```
 
-> **Важно**: перед `cog push` индекс должен быть построен — папка `index/` должна содержать `.faiss` и `.pkl`.
+### Шаг 2 — Создать модель на Replicate
+
+1. Зайти на [replicate.com](https://replicate.com) → Sign up (через GitHub)
+2. **Your profile → Create model**, имя: `song-finder`, тип: **Private**
+3. Запомнить свой username (виден в URL профиля)
+
+### Шаг 3 — Залогиниться из терминала
+
+```powershell
+cog login
+```
+
+Откроется браузер → нажать **Authorize** → вернуться в терминал.
+
+### Шаг 4 — Убедиться что индекс построен
+
+Папка `index/` должна содержать `song_index.faiss` и `song_map.pkl`.  
+Без них деплой сломается — Cog упаковывает индекс внутрь Docker-образа.
+
+### Шаг 5 — Задеплоить
+
+```powershell
+cog push r8.im/ВАШ_USERNAME/song-finder
+```
+
+Соберёт Docker-образ с моделью и индексом, загрузит на Replicate (~10–15 минут первый раз).
+
+### Шаг 6 — Открыть
+
+После загрузки: `https://replicate.com/ВАШ_USERNAME/song-finder`
+
+Там будет веб-интерфейс — вводишь запрос, получаешь JSON с треками.
+
+> **Важно**: перед `cog push` пересобери индекс на актуальном датасете (Genius).  
+> Индекс упаковывается внутрь образа — после смены датасета нужен повторный `cog push`.
 
 ---
 
