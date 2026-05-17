@@ -1,4 +1,4 @@
-# SongFinder — Semantic Song Search
+# SongFinder
 
 Находит песни по смысловому описанию пользователя.  
 Векторный поиск с эмбеддингами (sentence-transformers) + FAISS HNSW индекс + FastAPI бэкенд.
