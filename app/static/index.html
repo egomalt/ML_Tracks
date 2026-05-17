@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SongFinder — найди песню по описанию</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <header class="header">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      SongFinder
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="hero">
+      <h1 class="hero-title">
+        Найди песню<br/>
+        <span class="gradient-text">по смыслу</span>
+      </h1>
+      <p class="hero-sub">
+        Опишите настроение, тему или историю — алгоритм найдёт треки,
+        которые подходят по смыслу, а не по ключевым словам.
+      </p>
+
+      <form class="search-form" id="searchForm">
+        <div class="search-wrap">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            id="queryInput"
+            class="search-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Грустная песня про расставание…"
+          />
+          <button class="search-btn" type="submit">
+            <span class="btn-text">Найти</span>
+            <svg class="btn-arrow" width="18" height="18" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+        </div>
+        <div class="chips">
+          <button type="button" class="chip" data-q="Грустная русская рок-песня о расставании">Грустный рок</button>
+          <button type="button" class="chip" data-q="Весёлая песня про дружбу и лето">Дружба и лето</button>
+          <button type="button" class="chip" data-q="Мотивирующий рэп про успех и цели">Мотивирующий рэп</button>
+          <button type="button" class="chip" data-q="Тихая акустическая песня о доме">Про дом</button>
+          <button type="button" class="chip" data-q="Sad love song about missing someone">Sad love</button>
+        </div>
+        <label class="translate-toggle">
+          <input type="checkbox" id="translateToggle" />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          Переводить цитату на русский
+        </label>
+      </form>
+    </section>
+
+    <section class="results-section" id="resultsSection" aria-live="polite">
+      <div class="loader" id="loader" hidden>
+        <div class="wave">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <p>Ищем подходящие треки…</p>
+      </div>
+
+      <div class="error-box" id="errorBox" hidden></div>
+
+      <div class="results-grid" id="resultsGrid"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Semantic Song Search · ML Project ·
+    <a href="https://github.com" target="_blank">GitHub</a>
+  </footer>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>

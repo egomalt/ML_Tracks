@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Data (large files)
+data/raw/
+data/processed/chunks.jsonl
+index/*.faiss
+index/*.pkl
+
+# Kaggle credentials
+.kaggle/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
