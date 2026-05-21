@@ -42,24 +42,21 @@ uvicorn app.main:app --port 8000
 
 ## Полный датасет (Genius Song Lyrics, ~5M треков)
 
-### Шаг 1 — Kaggle API
+### Шаг 1 — Скачать датасет вручную
 
-1. Зайти на https://www.kaggle.com → Account → Settings → API → **Create New API Token**
-2. Скачается файл `kaggle.json` — положить в:
-   - Windows: `C:\Users\<user>\.kaggle\kaggle.json`
-   - Linux/Mac: `~/.kaggle/kaggle.json`
-3. Формат файла: `{"username":"your_username","key":"your_api_key"}`
+1. Зайти на страницу датасета: [Genius Song Lyrics on Kaggle](https://www.kaggle.com/datasets/carlosgdcj/genius-song-lyrics-with-language-information)
+2. Войти в Kaggle (бесплатный аккаунт) → нажать **Download** (~1.8 ГБ)
+3. Распаковать архив, взять файл `song_lyrics.csv`
+4. Положить его в папку `data/raw/`
 
-> Папку `.kaggle` может потребоваться создать вручную.
-
-### Шаг 2 — Скачать датасет
-
-```bash
-python scripts/01_download_data.py
+```
+data/
+└── raw/
+    └── song_lyrics.csv   ← сюда
 ```
 
-Скачивает `carlosgdcj/genius-song-lyrics-with-language-information` (~1.8 ГБ) через Kaggle API v1 напрямую (без SDK — обход бага Python 3.13 + urllib3).  
-Файл сохраняется в `data/raw/song_lyrics.csv` с колонками: `title, artist, tag, lyrics, language, id`.
+Колонки файла: `title, artist, tag, lyrics, language, id`  
+(`tag` — жанр: `pop, rock, rap, r-b, country, misc`)
 
 ### Шаг 3 — Препроцессинг
 
@@ -68,7 +65,7 @@ python scripts/02_preprocess.py --limit 10000   # 10k английских пе�
 ```
 
 Что происходит:
-- Из ~5M треков берутся только `language == "en"` (первые 10 000)
+- Из ~5M треков берутся `language in ["en", "ru"]` (первые 10 000)
 - Текст разбивается на куплеты (разделитель `\n\n`)
 - Длинные куплеты режутся на блоки по 3 строки (макс. 300 символов)
 - Каждый чанк обогащается метаданными: `"Жанр: pop. Исполнитель: The Weeknd. Текст: ..."`
@@ -294,10 +291,18 @@ cog push r8.im/ВАШ_USERNAME/song-finder
 ### `POST /search`
 
 ```json
-{ "query": "грустная песня про лето", "top_k": 3, "translate": false }
+{ "query": "грустная песня про лето", "top_k": 3, "translate": false, "genre": "pop" }
 ```
 
-Параметр `translate: true` — переводит цитату из результата на русский (Google Translate, без API-ключа).
+| Параметр | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `query` | string | — | Описание песни (любой язык) |
+| `top_k` | int | 3 | Количество результатов (1–10) |
+| `translate` | bool | false | Перевести цитату на русский (Google Translate) |
+| `genre` | string\|null | null | Фильтр по жанру: `pop`, `rock`, `rap`, `r-b`, `country`, `misc` |
+
+Ранжирование: `0.85 × cosine_similarity + 0.15 × popularity_score`  
+`popularity_score` — нормализованный log(views) из Genius.
 
 Пример реального ответа:
 ```json
@@ -333,6 +338,6 @@ cog push r8.im/ВАШ_USERNAME/song-finder
 | Размер чанка: 200 / 400 / 600 символов | Баланс точность/покрытие |
 | Фильтр по жанру в поиске | Добавить параметр `genre` в `/search` |
 | efSearch: 50 / 100 / 200 | Точность vs скорость поиска |
-| Включить не только `en` в фильтре языка | Добавить русские/испанские треки |
+| Добавить испанские/французские треки | Расширить `language.isin(["en","ru","es","fr"])` |
 
 Запускайте `benchmark.py --save` перед и после каждого изменения — сравнивайте баллы.

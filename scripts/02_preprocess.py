@@ -86,23 +86,25 @@ def make_vectorise_text(chunk: str, artist: str, genre: str) -> str:
 
 def load_kaggle_csv(path: pathlib.Path, limit: int) -> list[dict]:
     print(f"Loading {path} …")
-    df = pd.read_csv(path, usecols=["title", "artist", "tag", "lyrics", "language", "id"])
+    df = pd.read_csv(path, usecols=["title", "artist", "tag", "lyrics", "language", "id", "views"])
     df = df.dropna(subset=["lyrics", "artist", "title"])
     df = df[df["lyrics"].str.len() > 100]
-    # оставляем только английские треки (модель мультиязычная, запросы могут быть русскими)
-    df = df[df["language"] == "en"]
+    # английские и русские треки (модель мультиязычная)
+    df = df[df["language"].isin(["en", "ru"])]
     if limit:
         df = df.head(limit)
     songs = []
     for _, row in df.iterrows():
         genius_id = row.get("id", "")
         url = f"https://genius.com/songs/{int(genius_id)}" if pd.notna(genius_id) and str(genius_id).isdigit() else ""
+        views = int(row["views"]) if pd.notna(row.get("views")) else 0
         songs.append({
             "title": str(row["title"]).strip(),
             "artist": str(row["artist"]).strip(),
             "genre": str(row.get("tag", "Unknown")).strip(),
             "url": url,
             "lyrics": str(row["lyrics"]),
+            "views": views,
         })
     return songs
 
@@ -156,6 +158,7 @@ def main():
                 "artist": song["artist"],
                 "genre": song.get("genre", "Unknown"),
                 "url": song.get("url", ""),
+                "views": song.get("views", 0),
             }
 
             for i, chunk in enumerate(chunks):

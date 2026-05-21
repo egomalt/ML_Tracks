@@ -28,6 +28,17 @@ const resultsGrid     = document.getElementById("resultsGrid");
 const submitBtn       = form.querySelector(".search-btn");
 const translateToggle = document.getElementById("translateToggle");
 
+let activeGenre = "";
+
+// ── genre pills ───────────────────────────────────────────────────────────
+document.querySelectorAll(".genre-pill").forEach(pill => {
+  pill.addEventListener("click", () => {
+    document.querySelectorAll(".genre-pill").forEach(p => p.classList.remove("active"));
+    pill.classList.add("active");
+    activeGenre = pill.dataset.genre;
+  });
+});
+
 // ── chip clicks ───────────────────────────────────────────────────────────
 document.querySelectorAll(".chip").forEach(chip => {
   chip.addEventListener("click", () => {
@@ -53,7 +64,7 @@ async function doSearch(query) {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: 3, translate: translateToggle.checked }),
+      body: JSON.stringify({ query, top_k: 3, translate: translateToggle.checked, genre: activeGenre || null }),
     });
 
     if (!res.ok) {

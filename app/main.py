@@ -37,6 +37,7 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 3
     translate: bool = False
+    genre: str | None = None
 
 
 @app.get("/", include_in_schema=False)
@@ -49,7 +50,8 @@ async def search(req: SearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query is empty")
     top_k = max(1, min(req.top_k, 10))
-    results = searcher.search(req.query.strip(), top_k=top_k)
+    genre = req.genre.strip().lower() if req.genre else None
+    results = searcher.search(req.query.strip(), top_k=top_k, genre=genre)
     if req.translate:
         for r in results:
             try:

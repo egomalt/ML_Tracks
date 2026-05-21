@@ -156,6 +156,37 @@ body {
   color: var(--text);
 }
 
+/* ── genre filter ────────────────────────────────────────────────────── */
+.genre-filter {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+.genre-label {
+  font-size: .82rem; color: var(--muted); white-space: nowrap;
+}
+
+.genre-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.genre-pill {
+  padding: 5px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--muted);
+  font-size: .82rem; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.genre-pill:hover {
+  border-color: var(--accent); color: var(--text);
+}
+
+.genre-pill.active {
+  background: rgba(124,58,237,.2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 /* ── translate toggle ────────────────────────────────────────────────── */
 .translate-toggle {
   display: inline-flex; align-items: center; gap: 10px;
