@@ -255,11 +255,24 @@ HNSW строит многоуровневый граф: на верхних у�
 
 ### Шаг 1 — Установить Cog
 
+**Linux / Mac:**
+```bash
+# Скачать бинарник (не pip-пакет!)
+curl -o ~/.local/bin/cog -L https://github.com/replicate/cog/releases/download/v0.20.0/cog_Linux_x86_64
+chmod +x ~/.local/bin/cog
+
+# Добавить в PATH (если cog не находится после установки)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+**Windows:**
 ```powershell
-# Через winget (PowerShell от имени администратора)
 winget install --id Replicate.Cog
-# или через pip (без прав администратора)
-.venv\Scripts\pip install cog
+```
+
+Проверить установку:
+```bash
+cog --version
 ```
 
 ### Шаг 2 — Создать модель на Replicate
@@ -270,7 +283,7 @@ winget install --id Replicate.Cog
 
 ### Шаг 3 — Залогиниться из терминала
 
-```powershell
+```bash
 cog login
 ```
 
@@ -283,7 +296,7 @@ cog login
 
 ### Шаг 5 — Задеплоить
 
-```powershell
+```bash
 cog push r8.im/ВАШ_USERNAME/song-finder
 ```
 
