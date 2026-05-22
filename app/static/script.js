@@ -27,6 +27,7 @@ const errorBox        = document.getElementById("errorBox");
 const resultsGrid     = document.getElementById("resultsGrid");
 const submitBtn       = form.querySelector(".search-btn");
 const translateToggle = document.getElementById("translateToggle");
+const searchIcon      = form.querySelector(".search-icon");
 
 let activeGenre = "";
 
@@ -59,6 +60,7 @@ async function doSearch(query) {
   setLoading(true);
   clearResults();
   hideError();
+  searchIcon.hidden = false;
 
   try {
     const res = await fetch(API_URL, {
@@ -80,6 +82,7 @@ async function doSearch(query) {
     }
 
     renderResults(results);
+    searchIcon.hidden = true;
   } catch (err) {
     showError(`Ошибка: ${err.message}`);
   } finally {

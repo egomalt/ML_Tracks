@@ -2,20 +2,33 @@
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
-.env
+env/
 
-# Data (large files)
+# Environment variables
+.env
+.env.*
+
+# Data — большие файлы не коммитим
 data/raw/
-data/processed/chunks.jsonl
-index/*.faiss
-index/*.pkl
+data/processed/
+!data/.gitkeep
+
+# FAISS индекс
+index/
+!index/.gitkeep
 
 # Kaggle credentials
 .kaggle/
 
-# Jupyter checkpoints
+# HuggingFace model cache
+.cache/
+
+# Jupyter
 .ipynb_checkpoints/
 
 # OS

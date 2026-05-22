@@ -3,11 +3,13 @@
 Векторизация чанков через sentence-transformers и построение FAISS HNSW индекса.
 
 Вектор каждой песни = среднее всех векторов её чанков (нормализованное).
-Это позволяет искать по настроению всего трека, а не по отдельному куплету.
 
 Вход:  data/processed/chunks.jsonl  +  data/processed/songs.json
 Выход: index/song_index.faiss   — один вектор на песню
        index/song_map.pkl       — список {song_id, best_chunk_text} по позиции в индексе
+
+Память: чанки читаются потоково батчами; в RAM одновременно хранятся только
+        текущий батч + аккумуляторы (sum-вектор на песню). Никаких 10M векторов.
 """
 import json
 import pathlib
@@ -26,8 +28,6 @@ INDEX_DIR = pathlib.Path("index")
 CHUNKS_PATH = PROCESSED_DIR / "chunks.jsonl"
 SONGS_PATH = PROCESSED_DIR / "songs.json"
 
-# M=32: каждый узел имеет до 32 двунаправленных связей на слой
-# efConstruction=200: чем выше — тем лучше качество индекса, но дольше построение
 HNSW_M = 32
 HNSW_EF_CONSTRUCTION = 200
 HNSW_EF_SEARCH = 100
@@ -36,91 +36,118 @@ BATCH_SIZE = 256
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
-def load_chunks(path: pathlib.Path) -> tuple[list[dict], list[str]]:
-    chunks, texts = [], []
+# ---------------------------------------------------------------------------
+# Потоковое чтение чанков батчами
+# ---------------------------------------------------------------------------
+
+def iter_batches(path: pathlib.Path, batch_size: int):
+    """Читает chunks.jsonl и отдаёт батчи (chunk_dicts, vectorise_texts)."""
+    batch_chunks, batch_texts = [], []
     with open(path, encoding="utf-8") as f:
         for line in f:
             rec = json.loads(line)
-            chunks.append({
-                "song_id": rec["song_id"],
+            batch_chunks.append({
+                "song_id":     rec["song_id"],
                 "chunk_index": rec["chunk_index"],
-                "text": rec["text"],
+                "text":        rec["text"],
             })
-            texts.append(rec["vectorise_text"])
-    return chunks, texts
+            batch_texts.append(rec["vectorise_text"])
+            if len(batch_chunks) >= batch_size:
+                yield batch_chunks, batch_texts
+                batch_chunks, batch_texts = [], []
+    if batch_chunks:
+        yield batch_chunks, batch_texts
 
 
-def encode_in_batches(
+def count_lines(path: pathlib.Path) -> int:
+    with open(path, "rb") as f:
+        return sum(1 for _ in f)
+
+
+# ---------------------------------------------------------------------------
+# Кодирование + агрегация за один проход
+# ---------------------------------------------------------------------------
+
+def encode_and_aggregate(
     model: SentenceTransformer,
-    texts: list[str],
+    chunks_path: pathlib.Path,
     batch_size: int,
-) -> np.ndarray:
-    all_vecs = []
-    for i in tqdm(range(0, len(texts), batch_size), desc="Encoding"):
-        batch = texts[i : i + batch_size]
-        vecs = model.encode(
-            batch,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
-        all_vecs.append(vecs)
-    return np.vstack(all_vecs).astype("float32")
+) -> dict[str, dict]:
+    """
+    Читает чанки батчами, кодирует, сразу суммирует векторы по песне.
+    Возвращает accum: {song_id -> {"sum": ndarray, "count": int, "text": str}}
+    В RAM одновременно: один батч векторов + аккумуляторы.
+    """
+    print("Считаем чанки …")
+    total = count_lines(chunks_path)
+    print(f"  {total:,} чанков")
+
+    accum: dict[str, dict] = {}
+
+    with tqdm(total=total, desc="Encoding") as pbar:
+        for batch_chunks, batch_texts in iter_batches(chunks_path, batch_size):
+            vecs = model.encode(
+                batch_texts,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            ).astype("float32")
+
+            for chunk, vec in zip(batch_chunks, vecs):
+                sid = chunk["song_id"]
+                if sid not in accum:
+                    accum[sid] = {"sum": vec.copy(), "count": 1, "text": chunk["text"]}
+                else:
+                    accum[sid]["sum"] += vec
+                    accum[sid]["count"] += 1
+
+            pbar.update(len(batch_chunks))
+
+    return accum
 
 
-def aggregate_by_song(
-    chunks: list[dict],
-    chunk_vecs: np.ndarray,
+def build_song_vectors(
+    accum: dict[str, dict],
 ) -> tuple[list[str], np.ndarray, dict[str, str]]:
-    """
-    Усредняет векторы чанков по песне -> один вектор на трек.
-
-    Возвращает:
-      song_ids   — список song_id в порядке строк индекса
-      song_vecs  — матрица (n_songs, dim), нормализованная
-      best_chunk — {song_id -> текст первого чанка} для превью
-    """
-    buckets: dict[str, list[int]] = defaultdict(list)
-    for i, chunk in enumerate(chunks):
-        buckets[chunk["song_id"]].append(i)
-
+    """Нормализует средние векторы и собирает матрицу для FAISS."""
     song_ids: list[str] = []
     averaged: list[np.ndarray] = []
     best_chunk: dict[str, str] = {}
 
-    for song_id, idxs in tqdm(buckets.items(), desc="Averaging"):
-        vecs = chunk_vecs[idxs]
-        mean_vec = vecs.mean(axis=0)
-        # нормализуем среднее — cosine similarity работает только с единичными векторами
+    for sid, data in tqdm(accum.items(), desc="Normalizing"):
+        mean_vec = data["sum"] / data["count"]
         norm = np.linalg.norm(mean_vec)
         if norm > 0:
             mean_vec /= norm
+        song_ids.append(sid)
         averaged.append(mean_vec)
-        song_ids.append(song_id)
-        # сохраняем первый чанк как превью-цитату
-        first_idx = idxs[0]
-        best_chunk[song_id] = chunks[first_idx]["text"]
+        best_chunk[sid] = data["text"]
 
     return song_ids, np.vstack(averaged).astype("float32"), best_chunk
 
 
 def build_hnsw_index(vecs: np.ndarray) -> faiss.IndexHNSWFlat:
     dim = vecs.shape[1]
-    # IndexHNSWFlat со скалярным произведением (= косинусное сходство для нормированных векторов)
     index = faiss.IndexHNSWFlat(dim, HNSW_M, faiss.METRIC_INNER_PRODUCT)
     index.hnsw.efConstruction = HNSW_EF_CONSTRUCTION
     index.hnsw.efSearch = HNSW_EF_SEARCH
-    print(f"Building HNSW index (dim={dim}, M={HNSW_M}) over {len(vecs)} vectors ...")
+    print(f"Building HNSW index (dim={dim}, M={HNSW_M}, n={len(vecs):,}) …")
     t0 = time.perf_counter()
     index.add(vecs)
     elapsed = time.perf_counter() - t0
-    print(f"Index built in {elapsed:.1f}s  |  ntotal={index.ntotal}")
+    print(f"Готово за {elapsed:.1f}s  |  ntotal={index.ntotal:,}")
     return index
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=MODEL_NAME,
                         help="sentence-transformers model name")
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE,
+                        help="Батч-размер для энкодера (уменьши при нехватке RAM)")
     args = parser.parse_args()
 
     if not CHUNKS_PATH.exists():
@@ -131,18 +158,14 @@ def main():
     print(f"Loading model: {args.model}")
     model = SentenceTransformer(args.model)
 
-    print("Loading chunks ...")
-    chunks, texts = load_chunks(CHUNKS_PATH)
-    print(f"  {len(chunks)} chunks loaded")
+    accum = encode_and_aggregate(model, CHUNKS_PATH, args.batch_size)
+    print(f"  {len(accum):,} уникальных песен")
 
-    chunk_vecs = encode_in_batches(model, texts, BATCH_SIZE)
-
-    song_ids, song_vecs, best_chunk = aggregate_by_song(chunks, chunk_vecs)
-    print(f"  {len(song_ids)} unique songs")
+    song_ids, song_vecs, best_chunk = build_song_vectors(accum)
+    del accum  # освобождаем ~sum-векторы
 
     index = build_hnsw_index(song_vecs)
 
-    # song_map: список записей в том же порядке, что строки индекса
     song_map = [
         {"song_id": sid, "preview_text": best_chunk[sid]}
         for sid in song_ids
@@ -156,7 +179,7 @@ def main():
     with open(song_map_path, "wb") as f:
         pickle.dump(song_map, f)
 
-    print(f"\nSaved:")
+    print(f"\nСохранено:")
     print(f"  {index_path}  ({index_path.stat().st_size / 1e6:.1f} MB)")
     print(f"  {song_map_path}  ({song_map_path.stat().st_size / 1e6:.1f} MB)")
 
