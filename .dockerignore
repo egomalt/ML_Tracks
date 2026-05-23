@@ -5,8 +5,8 @@ venv/
 # Сырой датасет — тяжёлый, внутри образа не нужен
 data/raw/
 
-# Промежуточные данные — тоже не нужны в образе
-data/processed/
+# chunks.jsonl огромный и не нужен в образе, songs.json нужен
+data/processed/chunks.jsonl
 
 # Кэш моделей — скачается при первом запуске на Replicate
 .cache/

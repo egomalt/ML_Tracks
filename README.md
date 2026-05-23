@@ -3,7 +3,8 @@
 Находит песни по смысловому описанию пользователя.  
 Векторный поиск с эмбеддингами (sentence-transformers) + FAISS HNSW индекс + FastAPI бэкенд.
 
-**Датасет:** Genius Song Lyrics (~5M треков), случайная выборка до 1 000 000 en/ru песен с реальными жанрами.
+**Датасет:** Genius Song Lyrics (~5M треков), случайная выборка до 1 000 000 en/ru песен с реальными жанрами.  
+**Деплой:** [huggingface.co/spaces/egomalt/song-finder](https://huggingface.co/spaces/egomalt/song-finder)
 
 ---
 
@@ -29,7 +30,7 @@ python scripts/01_download_data.py --demo
 # 5. Разбить тексты на чанки
 python scripts/02_preprocess.py
 
-# 6. Построить FAISS-индекс (~10 мин на CPU, скачает модель ~120 МБ)
+# 6. Построить FAISS-индекс (~10 мин на CPU, скачает модель ~470 МБ)
 python scripts/03_build_index.py
 
 # 7. Запустить сервер
@@ -89,7 +90,7 @@ python scripts/03_build_index.py
 python scripts/03_build_index.py --batch-size 64
 ```
 
-При первом запуске скачает модель `paraphrase-multilingual-MiniLM-L12-v2` (~120 МБ).  
+При первом запуске скачает модель `paraphrase-multilingual-MiniLM-L12-v2` (~470 МБ).  
 На CPU (без GPU): 100k песен ≈ **~30 мин**, 1M песен ≈ **~5 часов**.  
 Результат: `index/song_index.faiss` + `index/song_map.pkl`.
 
@@ -104,21 +105,9 @@ python scripts/03_build_index.py --batch-size 64
 
 ### Шаг 4 — Запустить сервер
 
-**Важно:** все команды запускать с активированным виртуальным окружением.  
-Если окружение не активировано — Python не найдёт faiss, sentence-transformers и другие пакеты.
-
 ```bash
-# Сначала активировать окружение (один раз за сессию терминала)
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # Linux/Mac
-
-# Затем запустить сервер
+source .venv/bin/activate   # если ещё не активировано
 uvicorn app.main:app --port 8000
-```
-
-Или одной строкой без активации:
-```bash
-.venv\Scripts\uvicorn app.main:app --port 8000
 ```
 
 Сервер загружает модель и индекс (~30 сек при старте), затем отвечает на запросы.  
@@ -129,12 +118,13 @@ uvicorn app.main:app --port 8000
 ## Структура проекта
 
 ```
-ml-song-search/
+ML_Tracks/
 ├── scripts/
 │   ├── 01_download_data.py   # Загрузка датасета (Kaggle или --demo)
-│   ├── 02_preprocess.py      # Нарезка чанков + добавление метаданных
-│   ├── 03_build_index.py     # Векторизация + построение FAISS HNSW
-│   └── benchmark.py          # Замер качества (10 фиксированных запросов)
+│   ├── 02_preprocess.py      # Потоковая нарезка + reservoir sampling
+│   ├── 03_build_index.py     # Векторизация батчами + построение FAISS HNSW
+│   ├── 04_experiment.py      # Автоматическое сравнение конфигураций
+│   └── benchmark.py          # Ручной замер качества (10 запросов)
 ├── app/
 │   ├── search.py             # Ядро поиска (используется везде)
 │   ├── main.py               # FastAPI сервер + перевод цитат (deep-translator)
@@ -143,172 +133,68 @@ ml-song-search/
 │   ├── raw/                  # Исходные данные (не в git)
 │   └── processed/            # songs.json + chunks.jsonl (не в git)
 ├── index/                    # FAISS-индекс (не в git)
+├── Dockerfile                # Образ для деплоя (HuggingFace Spaces)
 ├── predict.py                # Replicate Cog predictor
 ├── cog.yaml                  # Replicate конфиг
-├── requirements.txt
+├── requirements.txt          # Все зависимости (локальная разработка)
+├── requirements-prod.txt     # Минимальные зависимости (деплой)
 └── install.sh                # Автоустановка зависимостей
 ```
 
 ---
 
-## Эксперименты
+## Деплой на HuggingFace Spaces
 
-Систематическое сравнение конфигураций — **базовый вариант + 2 группы улучшений**.
+Сайт задеплоен на [huggingface.co/spaces/egomalt/song-finder](https://huggingface.co/spaces/egomalt/song-finder) — бесплатно, 16 ГБ RAM, без карты.
 
-### Запуск автоматических экспериментов
-
-```bash
-python scripts/04_experiment.py
-```
-
-Тестирует два параметра без пересборки индекса и выводит сравнительную таблицу:
-
-**Эксперимент 1 — efSearch (точность HNSW vs скорость)**
-
-| efSearch | score top-1 | latency мс | Вывод |
-|---:|---:|---:|---|
-| 10 | ~0.72 | ~1 | быстро, качество падает |
-| 25 | ~0.75 | ~1 | |
-| **50** | **~0.77** | **~2** | **хороший баланс** |
-| 100 | ~0.78 | ~3 | текущий дефолт |
-| 200 | ~0.78 | ~5 | прирост незначительный |
-
-> При росте efSearch качество растёт быстро до ~50, потом плато. Латентность линейная.
-
-**Эксперимент 2 — top_k (количество результатов)**
-
-| top_k | score top-1 | latency мс |
-|---:|---:|---:|
-| 1 | ~0.78 | ~2 |
-| 3 | ~0.78 | ~3 |
-| 5 | ~0.78 | ~3 |
-| 10 | ~0.77 | ~4 |
-
-> top-1 score не зависит от top_k — индекс один и тот же. Латентность растёт незначительно.
-
-*Числа в таблицах — ориентировочные; реальные значения зависят от индекса и железа.*
-
-### Ручной бенчмарк качества
+Чтобы обновить деплой после изменений (пересборки индекса и т.д.):
 
 ```bash
-# С оценками 0-3 вручную (сколько из 3 результатов оказались релевантны)
-python scripts/benchmark.py --tag "v1: efSearch=100, chunk=300" --save
+# Установить git-lfs если нет
+sudo pacman -S git-lfs   # Arch Linux
+# brew install git-lfs   # Mac
 
-# Только вывод без оценок
-python scripts/benchmark.py --no-interactive
+git lfs install
+
+# Клонировать Space
+git clone https://ТОКЕН@huggingface.co/spaces/egomalt/song-finder ~/song-finder-space
+
+# Скопировать обновлённые файлы
+cp -r app index data/processed/songs.json Dockerfile requirements-prod.txt ~/song-finder-space/
+
+# Запушить
+cd ~/song-finder-space
+git add .
+git commit -m "Update index"
+git push
 ```
 
-Результаты сохраняются в `logs/benchmark.jsonl`.  
-Запускайте перед и после каждого изменения — сравнивайте итоговый балл 0–100.
-
-### Что сравнивалось и что выбрали
-
-| Параметр | Базовый | Альтернативы | Итог |
-|---|---|---|---|
-| Индекс | чанк-level | **song-level (усреднение чанков)** | song-level лучше — учитывает настроение трека, а не куплета |
-| efSearch | 50 | 10 / 25 / **100** / 200 | 100 — стабильное качество, < 5 мс |
-| Модель | `MiniLM-L12-v2` (384-dim) | `e5-large` (1024-dim) | MiniLM — быстрее, достаточно для задачи |
-| Датасет | Spotify (без жанров) | **Genius (с жанрами, SOTA треки)** | Genius — реальные жанры, узнаваемые треки |
+Токен генерируется на **huggingface.co → Settings → Access Tokens** (роль Write).
 
 ---
 
-## Пайплайн поиска
-
-### Построение индекса (один раз)
-
-```
-чанки из N песен (потоком, батчами по 256)
-      |
-SentenceTransformer.encode()  -> вектор 384-dim для батча
-      |
-Суммирование по song_id       -> sum-вектор на песню (чанки сразу выбрасываются)
-      |
-mean + нормализация           -> единичная длина (нужна для cosine similarity)
-      |
-FAISS HNSW.add()              -> индекс из N векторов (один на трек)
-```
-
-Каждая песня представлена **средним** всех векторов своих куплетов.  
-Это значит поиск учитывает настроение всего трека, а не отдельного куплета.
-
-### Поиск по запросу
-
-```
-Пользователь: "грустная песня про расставание"
-      |
-SentenceTransformer.encode(query)  -> вектор 384-dim (нормализованный)
-      |
-FAISS HNSW.search(vec, k=3)        -> top-3 ближайших песни по cosine similarity
-      |
-Ответ: title, artist, genre, url, preview_text, score
-```
-
-Дедупликация не нужна — в индексе по одному вектору на трек.
-
-### Почему HNSW быстрее полного перебора
-
-HNSW строит многоуровневый граф: на верхних уровнях мало вершин — быстро находим «район» поиска; спускаемся на нижние уровни, уточняем среди ближайших соседей. Сложность O(log n) вместо O(n), на 100k–1M песен поиск занимает менее 10 мс.
-
----
-
-## Деплой на Replicate
+## Деплой на Replicate (только API, без фронтенда)
 
 ### Шаг 1 — Установить Cog
 
-**Linux / Mac:**
 ```bash
-# Скачать бинарник (не pip-пакет!)
 curl -o ~/.local/bin/cog -L https://github.com/replicate/cog/releases/download/v0.20.0/cog_Linux_x86_64
 chmod +x ~/.local/bin/cog
-
-# Добавить в PATH (если cog не находится после установки)
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-```
-
-**Windows:**
-```powershell
-winget install --id Replicate.Cog
-```
-
-Проверить установку:
-```bash
-cog --version
 ```
 
 ### Шаг 2 — Создать модель на Replicate
 
 1. Зайти на [replicate.com](https://replicate.com) → Sign up (через GitHub)
 2. **Your profile → Create model**, имя: `song-finder`, тип: **Private**
-3. Запомнить свой username (виден в URL профиля)
 
-### Шаг 3 — Залогиниться из терминала
-
-```bash
-cog login
-```
-
-Откроется браузер → нажать **Authorize** → вернуться в терминал.
-
-### Шаг 4 — Убедиться что индекс построен
-
-Папка `index/` должна содержать `song_index.faiss` и `song_map.pkl`.  
-Без них деплой сломается — Cog упаковывает индекс внутрь Docker-образа.
-
-### Шаг 5 — Задеплоить
+### Шаг 3 — Залогиниться и задеплоить
 
 ```bash
+cog login --browserless
 cog push r8.im/ВАШ_USERNAME/song-finder
 ```
 
-Соберёт Docker-образ с моделью и индексом, загрузит на Replicate (~10–15 минут первый раз).
-
-### Шаг 6 — Открыть
-
-После загрузки: `https://replicate.com/ВАШ_USERNAME/song-finder`
-
-Там будет веб-интерфейс — вводишь запрос, получаешь JSON с треками.
-
-> **Важно**: перед `cog push` пересобери индекс на актуальном датасете (Genius).  
 > Индекс упаковывается внутрь образа — после смены датасета нужен повторный `cog push`.
 
 ---
@@ -331,7 +217,7 @@ cog push r8.im/ВАШ_USERNAME/song-finder
 Ранжирование: `0.85 × cosine_similarity + 0.15 × popularity_score`  
 `popularity_score` — нормализованный log(views) из Genius.
 
-Пример реального ответа:
+Пример ответа:
 ```json
 {
   "query": "sad love song about missing someone",
@@ -351,12 +237,93 @@ cog push r8.im/ВАШ_USERNAME/song-finder
 ### `GET /health`
 
 ```json
-{ "status": "ok", "index_size": 10000 }
+{ "status": "ok", "index_size": 100000 }
 ```
 
 ---
 
-## Эксперименты (идеи для улучшения)
+## Эксперименты
+
+### Автоматический
+
+```bash
+python scripts/04_experiment.py
+```
+
+Тестирует два параметра без пересборки индекса и выводит сравнительную таблицу:
+
+**efSearch (точность HNSW vs скорость)**
+
+| efSearch | score top-1 | latency мс | Вывод |
+|---:|---:|---:|---|
+| 10 | ~0.72 | ~1 | быстро, качество падает |
+| 25 | ~0.75 | ~1 | |
+| **50** | **~0.77** | **~2** | **хороший баланс** |
+| 100 | ~0.78 | ~3 | текущий дефолт |
+| 200 | ~0.78 | ~5 | прирост незначительный |
+
+**top_k (количество результатов)**
+
+| top_k | score top-1 | latency мс |
+|---:|---:|---:|
+| 1 | ~0.78 | ~2 |
+| 3 | ~0.78 | ~3 |
+| 5 | ~0.78 | ~3 |
+| 10 | ~0.77 | ~4 |
+
+### Ручной бенчмарк
+
+```bash
+python scripts/benchmark.py --tag "v1: efSearch=100" --save
+python scripts/benchmark.py --no-interactive   # только вывод
+```
+
+Результаты сохраняются в `logs/benchmark.jsonl`. Запускай до и после изменений.
+
+### Что сравнивалось
+
+| Параметр | Базовый | Итог |
+|---|---|---|
+| Индекс | чанк-level | song-level (усреднение) — учитывает настроение трека целиком |
+| efSearch | 50 | 100 — стабильное качество, < 5 мс |
+| Модель | `MiniLM-L12-v2` (384-dim) | MiniLM — быстрее, достаточно для задачи |
+| Датасет | Spotify (без жанров) | Genius — реальные жанры, узнаваемые треки |
+
+---
+
+## Пайплайн
+
+### Построение индекса (один раз)
+
+```
+чанки из N песен (потоком, батчами по 256)
+      |
+SentenceTransformer.encode()  -> вектор 384-dim для батча
+      |
+Суммирование по song_id       -> sum-вектор на песню (чанки сразу выбрасываются)
+      |
+mean + нормализация           -> единичная длина (cosine similarity)
+      |
+FAISS HNSW.add()              -> индекс из N векторов (один на трек)
+```
+
+### Поиск по запросу
+
+```
+Пользователь: "грустная песня про расставание"
+      |
+SentenceTransformer.encode(query)  -> вектор 384-dim (нормализованный)
+      |
+FAISS HNSW.search(vec, k=3)        -> top-3 ближайших по cosine similarity
+      |
+Ответ: title, artist, genre, url, preview_text, score
+```
+
+HNSW строит многоуровневый граф: сложность O(log n) вместо O(n), на 100k–1M песен поиск занимает менее 10 мс.
+
+---
+
+## Идеи для улучшения
 
 | Что менять | Ожидаемый эффект |
 |---|---|
@@ -366,5 +333,3 @@ cog push r8.im/ВАШ_USERNAME/song-finder
 | efSearch: 50 / 100 / 200 | Точность vs скорость поиска |
 | Добавить испанские/французские треки | Расширить `language.isin(["en","ru","es","fr"])` |
 | Фильтрация explicit-треков | Убирать нецензурный контент по ключевым словам |
-
-Запускайте `benchmark.py --save` перед и после каждого изменения — сравнивайте баллы.

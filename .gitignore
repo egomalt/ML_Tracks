@@ -22,6 +22,9 @@ data/processed/
 index/
 !index/.gitkeep
 
+# Cog build artifacts
+.cog/
+
 # Kaggle credentials
 .kaggle/
 
